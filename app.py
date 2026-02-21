@@ -120,9 +120,9 @@ with st.sidebar:
     sender_mail = st.text_input("Gmail Address", value="jeevamissvmins34@gmail.com")
     with st.expander("🔑 How to get App Password?"):
         st.markdown("""
-        **1.** Go to [Google App Passwords](https://myaccount.google.com/apppasswords).
-        **2.** Ensure **2-Step Verification** is ON in your Google Account.
-        **3.** App name: type **'Proposera AI'**.
+        **1.** Go to [Google App Passwords](https://myaccount.google.com/apppasswords).\n
+        **2.** Ensure **2-Step Verification** is ON in your Google Account.\n
+        **3.** App name: type **'Proposera AI'**.\n
         **4.** Click **Create**.
         **5.** Copy the **16-character code** and paste it below.
         """)
