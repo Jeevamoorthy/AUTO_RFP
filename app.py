@@ -118,6 +118,14 @@ st.markdown("""
 with st.sidebar:
     st.markdown("## 📬 Dispatch Control")
     sender_mail = st.text_input("Gmail Address", value="jeevamissvmins34@gmail.com")
+    with st.expander("🔑 How to get App Password?"):
+        st.markdown("""
+        **1.** Go to [Google App Passwords](https://myaccount.google.com/apppasswords).
+        **2.** Ensure **2-Step Verification** is ON in your Google Account.
+        **3.** App name: type **'Proposera AI'**.
+        **4.** Click **Create**.
+        **5.** Copy the **16-character code** and paste it below.
+        """)
     app_pass = st.text_input("App Password", type="password", help="Gmail > Security > App Passwords")
     st.divider()
     st.markdown("## 🧠 Reasoning Model")
@@ -127,7 +135,8 @@ with st.sidebar:
             "gemini-2.5-flash",
             "gemini-2.0-flash",
             "gemini-pro-latest",
-            "gemini-2.5-flash"
+            "gemini-2.5-flash";
+            "gemini-2.5-flash-latest"
             ])
     temp = st.slider("Neural Creativity", 0.0, 1.0, 0.3)
 
