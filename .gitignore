@@ -1,0 +1,8 @@
+.env
+venv/
+__pycache__/
+.streamlit/
+data/
+output/
+faiss_index/
+chroma_db/
