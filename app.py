@@ -2,6 +2,14 @@ import streamlit as st
 import os, time, urllib.parse
 from rag import build_knowledge_base, generate_proposal, extract_rfp_text, research_competitors, extract_emails, get_client_name, generate_email_body, send_real_email
 from utils import save_to_word
+import subprocess
+import sys
+
+# Hotfix for DuckDuckGo Search error
+try:
+    from duckduckgo_search import DDGS
+except ImportError:
+    subprocess.check_call([sys.executable, "-m", "pip", "install", "duckduckgo-search==6.3.0"])
 
 # --- PAGE CONFIG ---
 st.set_page_config(page_title="Proposera AI | Neural Midnight", layout="wide", page_icon="💠")
