@@ -135,8 +135,8 @@ with st.sidebar:
             "gemini-2.5-flash",
             "gemini-2.0-flash",
             "gemini-pro-latest",
-            "gemini-2.5-flash";
-            "gemini-2.5-flash-latest"
+            "gemini-2.5-flash",
+            "gemini-2.5-flash-latest";
             ])
     temp = st.slider("Neural Creativity", 0.0, 1.0, 0.3)
 
