@@ -17,7 +17,7 @@ from langchain_core.runnables import RunnablePassthrough
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_text_splitters import RecursiveCharacterTextSplitter
-from duckduckgo_search import DDGS  # Manual import to bypass broken LangChain tool
+from duckduckgo_search import DDGS 
 
 load_dotenv()
 
@@ -25,7 +25,7 @@ load_dotenv()
 embeddings = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
 
 def web_search_bypass(query):
-    """Bypasses the broken LangChain DuckDuckGo tool by calling the library directly."""
+    """Bypasses the broken LangChain DuckDuckGo tool."""
     try:
         with DDGS() as ddgs:
             results = [r for r in ddgs.text(query, max_results=3)]
@@ -53,11 +53,12 @@ def extract_emails(text):
     return emails[0] if emails else "client@example.com"
 
 def get_client_name(text, model_name):
-    # Use 1.5-flash-latest to avoid 429 quota errors
-    llm = ChatGoogleGenerativeAI(model="gemini-2.5-flash", temperature=0)
+    """Identifies client name using stable model to save quota."""
+    # Using 1.5-flash-latest here because it has a huge free quota
+    llm = ChatGoogleGenerativeAI(model="gemini-1.5-flash-latest", temperature=0)
     prompt = (
         "Identify the recipient company name from this RFP. Return ONLY the name. "
-        "Rules: No notes, no explanations. If missing, return 'Prospective Client'. \n\n"
+        "Rules: No notes. If missing, return 'Prospective Client'. \n\n"
         f"Text Sample: {text[:2000]}"
     )
     try:
@@ -73,7 +74,19 @@ def research_competitors(rfp_text):
     return web_search_bypass(query)
 
 def generate_proposal(rfp_text, vectorstore, web_data, model_name, temp, client_name):
-    llm = ChatGoogleGenerativeAI(model="gemini-2.5-flash", temperature=temp, max_output_tokens=4000)
+    """Generates the main proposal using the UI-selected model."""
+    # Using the exact model_name passed from the Streamlit UI
+    llm = ChatGoogleGenerativeAI(
+        model=model_name, 
+        temperature=temp, 
+        max_output_tokens=4000,
+        safety_settings={
+            "HARM_CATEGORY_HARASSMENT": "BLOCK_NONE",
+            "HARM_CATEGORY_HATE_SPEECH": "BLOCK_NONE",
+            "HARM_CATEGORY_SEXUALLY_EXPLICIT": "BLOCK_NONE",
+            "HARM_CATEGORY_DANGEROUS_CONTENT": "BLOCK_NONE",
+        }
+    )
     retriever = vectorstore.as_retriever()
     
     system_prompt = (
@@ -99,21 +112,25 @@ def generate_proposal(rfp_text, vectorstore, web_data, model_name, temp, client_
     return chain.invoke(rfp_text)
 
 def generate_email_body(proposal_text, model_name, client_name):
-    llm = ChatGoogleGenerativeAI(model="gemini-2.5-flash", temperature=0.5)
+    """Generates email text using stable model to save quota."""
+    llm = ChatGoogleGenerativeAI(model="gemini-1.5-flash-latest", temperature=0.5)
     prompt = f"Write a 3-sentence professional email to {client_name} about the attached proposal. \n\n Proposal: {proposal_text[:500]}"
     try:
-        content = llm.invoke(prompt).content
-        return str(content)
+        return str(llm.invoke(prompt).content)
     except Exception:
-        return f"Hello {client_name}, please find our proposal attached for your review."
+        return f"Dear {client_name}, please find our proposal attached."
 
 def send_real_email(recipient_email, subject, body, attachment_path, sender_email, app_password):
     try:
+        # Nuclear option sanitization for ASCII errors
+        clean_body = unicodedata.normalize('NFKD', str(body)).encode('ascii', 'ignore').decode('ascii')
+        clean_subject = unicodedata.normalize('NFKD', str(subject)).encode('ascii', 'ignore').decode('ascii')
+
         msg = MIMEMultipart()
         msg['From'] = sender_email
         msg['To'] = recipient_email
-        msg['Subject'] = Header(str(subject), 'utf-8')
-        msg.attach(MIMEText(str(body), 'plain', 'utf-8'))
+        msg['Subject'] = Header(clean_subject, 'utf-8')
+        msg.attach(MIMEText(clean_body, 'plain', 'utf-8'))
 
         if os.path.exists(attachment_path):
             filename = os.path.basename(attachment_path)
@@ -122,7 +139,7 @@ def send_real_email(recipient_email, subject, body, attachment_path, sender_emai
                 part.set_payload(f.read())
                 encoders.encode_base64(part)
                 part.add_header('Content-Disposition', f'attachment; filename="{filename}"')
-                msg.attach(part) # FIXED: Added missing parenthesis
+                msg.attach(part)
         else:
             return f"Error: Attachment not found at {attachment_path}"
 
@@ -133,7 +150,7 @@ def send_real_email(recipient_email, subject, body, attachment_path, sender_emai
         server.quit()
         return True
     except Exception as e:
-        return f"Technical Dispatch Error: {str(e)}"
+        return str(e)
 
 def extract_rfp_text(path):
     loader = PyPDFLoader(path)
