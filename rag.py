@@ -54,7 +54,7 @@ def extract_emails(text):
 
 def get_client_name(text, model_name):
     # Use 1.5-flash-latest to avoid 429 quota errors
-    llm = ChatGoogleGenerativeAI(model="gemini-2.5-flash-latest", temperature=0)
+    llm = ChatGoogleGenerativeAI(model="gemini-2.5-flash", temperature=0)
     prompt = (
         "Identify the recipient company name from this RFP. Return ONLY the name. "
         "Rules: No notes, no explanations. If missing, return 'Prospective Client'. \n\n"
@@ -73,7 +73,7 @@ def research_competitors(rfp_text):
     return web_search_bypass(query)
 
 def generate_proposal(rfp_text, vectorstore, web_data, model_name, temp, client_name):
-    llm = ChatGoogleGenerativeAI(model="gemini-2.5-flash-latest", temperature=temp, max_output_tokens=4000)
+    llm = ChatGoogleGenerativeAI(model="gemini-2.5-flash", temperature=temp, max_output_tokens=4000)
     retriever = vectorstore.as_retriever()
     
     system_prompt = (
@@ -99,7 +99,7 @@ def generate_proposal(rfp_text, vectorstore, web_data, model_name, temp, client_
     return chain.invoke(rfp_text)
 
 def generate_email_body(proposal_text, model_name, client_name):
-    llm = ChatGoogleGenerativeAI(model="gemini-2.5-flash-latest", temperature=0.5)
+    llm = ChatGoogleGenerativeAI(model="gemini-2.5-flash", temperature=0.5)
     prompt = f"Write a 3-sentence professional email to {client_name} about the attached proposal. \n\n Proposal: {proposal_text[:500]}"
     try:
         content = llm.invoke(prompt).content
