@@ -23,6 +23,8 @@ Built on a modular **Neural Midnight Architecture**, it combines:
 to generate compliant, enterprise-ready proposals in minutes — not weeks.
 
 ---
+<img width="1919" height="1003" alt="image" src="https://github.com/user-attachments/assets/29f0fc13-e4ad-4242-a795-9668c740ec79" />
+
 
 ## 🔴 The Problem
 
