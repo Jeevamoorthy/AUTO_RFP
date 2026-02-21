@@ -130,7 +130,6 @@ with st.sidebar:
     st.divider()
     st.markdown("## 🧠 Reasoning Model")
     model = st.selectbox("Select Intelligence Model", [
-            "deep-research-pro-preview-12-2025",
             "gemini-2.5-pro",
             "gemini-2.5-flash",
             "gemini-2.0-flash",
