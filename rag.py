@@ -53,18 +53,30 @@ def get_llm(model_name, temp, user_key=None):
             safety_settings={"HARM_CATEGORY_HARASSMENT": "BLOCK_NONE", "HARM_CATEGORY_HATE_SPEECH": "BLOCK_NONE"}
         )
 
-def build_knowledge_base():
+def build_knowledge_base(user_key=None): # Add user_key here
     docs = []
     kb_path = "/tmp/knowledge_base"
+    
+    # 1. Initialize embeddings with the correct key
+    current_key = user_key if user_key else api_key
+    current_embeddings = GoogleGenerativeAIEmbeddings(
+        model="text-embedding-004", 
+        google_api_key=current_key
+    )
+    
     if not os.path.exists(kb_path): return None
     for file in os.listdir(kb_path):
         if file.endswith(".pdf"):
             loader = PyPDFLoader(os.path.join(kb_path, file))
             docs.extend(loader.load())
+    
     if not docs: return None
+    
     splits = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200).split_documents(docs)
-    return FAISS.from_documents(documents=splits, embedding=embeddings)
-
+    
+    # 2. Use the local embeddings object
+    return FAISS.from_documents(documents=splits, embedding=current_embeddings)
+    
 def extract_emails(text):
     """Finds client email address from text - THIS WAS THE MISSING FUNCTION"""
     email_pattern = r"[\w\.-]+@[\w\.-]+\.\w+"
