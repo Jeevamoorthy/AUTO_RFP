@@ -53,16 +53,10 @@ def get_llm(model_name, temp, user_key=None):
             safety_settings={"HARM_CATEGORY_HARASSMENT": "BLOCK_NONE", "HARM_CATEGORY_HATE_SPEECH": "BLOCK_NONE"}
         )
 
-def build_knowledge_base(user_key=None): # Add user_key here
+def build_knowledge_base(user_key=None):
     docs = []
     kb_path = "/tmp/knowledge_base"
-    
-    # 1. Initialize embeddings with the correct key
     current_key = user_key if user_key else api_key
-    current_embeddings = GoogleGenerativeAIEmbeddings(
-        model="text-embedding-004", 
-        google_api_key=current_key
-    )
     
     if not os.path.exists(kb_path): return None
     for file in os.listdir(kb_path):
@@ -71,11 +65,28 @@ def build_knowledge_base(user_key=None): # Add user_key here
             docs.extend(loader.load())
     
     if not docs: return None
-    
     splits = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200).split_documents(docs)
+
+    # --- THE ROBUST FALLBACK ENGINE ---
+    # We try different names because Google/LangChain versioning is inconsistent
+    model_names = ["embedding-001", "text-embedding-004"] 
     
-    # 2. Use the local embeddings object
-    return FAISS.from_documents(documents=splits, embedding=current_embeddings)
+    for m_name in model_names:
+        try:
+            # We use the name WITHOUT the "models/" prefix because LangChain adds it
+            test_embeddings = GoogleGenerativeAIEmbeddings(
+                model=m_name, 
+                google_api_key=current_key
+            )
+            # Try a dummy embedding to see if it works
+            test_embeddings.embed_query("test") 
+            return FAISS.from_documents(documents=splits, embedding=test_embeddings)
+        except Exception as e:
+            continue # Try the next model name
+            
+    # Final Emergency Fallback (if all else fails, use the old standard name)
+    final_embeddings = GoogleGenerativeAIEmbeddings(model="models/embedding-001", google_api_key=current_key)
+    return FAISS.from_documents(documents=splits, embedding=final_embeddings)
     
 def extract_emails(text):
     """Finds client email address from text - THIS WAS THE MISSING FUNCTION"""
