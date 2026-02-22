@@ -107,15 +107,17 @@ _, col_center, _ = st.columns([1, 2, 1])
 with col_center:
     with st.expander("💎 System Configuration"):
         kb_files = st.file_uploader("Train Enterprise Brain (PDF)", accept_multiple_files=True, type="pdf")
-        if st.button("Optimize Memory"):
-            if kb_files:
-                for f in kb_files:
-                    kb_file_path = os.path.join(TMP_KB, f.name)
-                    with open(kb_file_path, "wb") as out:
-                        out.write(f.getbuffer())
-                st.session_state['vectorstore'] = build_knowledge_base()
-                st.success("✅ Neural Brain Ready.")
-
+        # Inside the "Optimize Memory" button block in app.py
+if st.button("Optimize Memory"):
+    if kb_files:
+        for f in kb_files:
+            kb_file_path = os.path.join(TMP_KB, f.name)
+            with open(kb_file_path, "wb") as out:
+                out.write(f.getbuffer())
+        
+        # PASS THE KEY HERE:
+        st.session_state['vectorstore'] = build_knowledge_base(user_key=user_api_key) 
+        st.success("✅ Neural Brain Ready.")
     st.markdown("<div class='form-card'>", unsafe_allow_html=True)
     rfp_files = st.file_uploader("Autonomous Mission Intake (Multiple RFPs OK)", type="pdf", accept_multiple_files=True)
     
