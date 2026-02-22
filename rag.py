@@ -1,114 +1,121 @@
+import os
+import re
+import smtplib
+import unicodedata
 import streamlit as st
-import os, time, subprocess, sys
-from rag import build_knowledge_base, generate_proposal, extract_rfp_text, research_competitors, extract_emails, get_client_name, generate_email_body, send_real_email
-from utils import save_to_word
+from email import encoders
+from email.header import Header
+from email.mime.base import MIMEBase
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
 
-# Streamlit Cloud Hotfix
-try: from duckduckgo_search import DDGS
-except ImportError: subprocess.check_call([sys.executable, "-m", "pip", "install", "duckduckgo-search==6.3.0"])
+from dotenv import load_dotenv
+from langchain_community.document_loaders import PyPDFLoader
+from langchain_community.vectorstores import FAISS
+from langchain_core.output_parsers import StrOutputParser
+from langchain_core.prompts import ChatPromptTemplate
+from langchain_core.runnables import RunnablePassthrough
+from langchain_google_genai import ChatGoogleGenerativeAI, GoogleGenerativeAIEmbeddings
+from langchain_openai import ChatOpenAI
+from langchain_anthropic import ChatAnthropic
+from langchain_huggingface import HuggingFaceEmbeddings
+from langchain_text_splitters import RecursiveCharacterTextSplitter
+from duckduckgo_search import DDGS 
 
-# Storage Paths
-TMP_KB, TMP_RFP, TMP_OUT = "/tmp/knowledge_base", "/tmp/rfp_input", "/tmp/output"
-for p in [TMP_KB, TMP_RFP, TMP_OUT]:
-    if not os.path.exists(p): os.makedirs(p)
+load_dotenv()
 
-st.set_page_config(page_title="Proposera AI | Neural Midnight", layout="wide", page_icon="💠")
+# Secure Key Loading
+api_key = os.getenv("GOOGLE_API_KEY") or (st.secrets["GOOGLE_API_KEY"] if "GOOGLE_API_KEY" in st.secrets else None)
 
-# --- UI BRANDING ---
-st.markdown("""
-    <style>
-        .stApp { background-color: #0A101E; background-image: linear-gradient(rgba(255,255,255,0.03) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.03) 1px, transparent 1px); background-size: 50px 50px; color: #E6F1FF; }
-        .form-card { background-color: #121E33; border: 1px solid #1F2A44; padding: 40px; border-radius: 14px; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5); max-width: 850px; margin: 0 auto; }
-        h1 { color: #00E0FF; text-align: center; font-weight: 800; text-shadow: 0 0 15px rgba(0,224,255,0.4); margin-bottom: 0px; }
-        .stButton>button { background: linear-gradient(90deg, #007BFF, #00E0FF) !important; color: white !important; font-weight: 700; padding: 14px; border: none; border-radius: 8px; width: 100%; transition: 0.3s; }
-        .preview-box { height: 450px; overflow-y: scroll; background-color: #0E1627; padding: 25px; border-radius: 10px; border: 1px solid #1F2F4A; color: #E6F1FF; font-family: 'Inter', sans-serif; line-height: 1.6; }
-    </style>
-""", unsafe_allow_html=True)
+# Use Google Embeddings (Fastest for Cloud)
+embeddings = GoogleGenerativeAIEmbeddings(model="models/embedding-001", google_api_key=api_key)
 
-# --- SIDEBAR ---
-with st.sidebar:
-    st.markdown("## 📬 Dispatch Control")
-    sender_mail = st.text_input("Gmail Address", value="jeevamissvmins34@gmail.com")
-    app_pass = st.text_input("App Password", type="password")
+def get_llm(model_name, temp, user_key=None):
+    """Universal AI Selector Engine"""
+    if "gpt" in model_name.lower() or "o1" in model_name.lower():
+        key = user_key if user_key else os.getenv("OPENAI_API_KEY")
+        if not key: raise ValueError("OpenAI Key required.")
+        return ChatOpenAI(model=model_name, temperature=temp, api_key=key)
     
-    st.divider()
-    st.markdown("## 🧠 Reasoning Brain")
-    provider = st.selectbox("Intelligence Provider", ["Google Gemini", "OpenAI GPT", "Anthropic Claude"])
+    elif "claude" in model_name.lower():
+        key = user_key if user_key else os.getenv("ANTHROPIC_API_KEY")
+        if not key: raise ValueError("Anthropic Key required.")
+        return ChatAnthropic(model=model_name, temperature=temp, api_key=key)
     
-    if provider == "Google Gemini":
-        model_list = [
-            "gemini-2.5-flash", "gemini-2.5-pro", "gemini-2.0-flash", "gemini-2.0-flash-001",
-            "gemini-2.0-flash-exp-image-generation", "gemini-2.0-flash-lite-001", "gemini-2.0-flash-lite",
-            "gemini-2.5-flash-preview-tts", "gemini-2.5-pro-preview-tts", "gemma-3-1b-it",
-            "gemma-3-4b-it", "gemini-flash-latest", "gemini-flash-lite-latest", "gemini-pro-latest",
-            "gemini-2.5-flash-lite", "gemini-2.5-flash-image", "gemini-2.5-flash-lite-preview-09-2025",
-            "gemini-3-pro-preview", "gemini-3-flash-preview", "gemini-3.1-pro-preview",
-            "gemini-3.1-pro-preview-customtools", "gemini-3-pro-image-preview", "nano-banana-pro-preview",
-            "gemini-robotics-er-1.5-preview", "gemini-2.5-computer-use-preview-10-2025", "deep-research-pro-preview-12-2025"
-        ]
-    elif provider == "OpenAI GPT":
-        model_list = ["gpt-4o", "gpt-4o-mini", "o1-preview"]
     else:
-        model_list = ["claude-3-5-sonnet-latest", "claude-3-haiku-20240307"]
+        key = user_key if user_key else api_key
+        if not key: raise ValueError("Gemini Key required.")
+        return ChatGoogleGenerativeAI(
+            model=model_name, 
+            temperature=temp, 
+            google_api_key=key,
+            max_output_tokens=4000,
+            safety_settings={"HARM_CATEGORY_HARASSMENT": "BLOCK_NONE", "HARM_CATEGORY_HATE_SPEECH": "BLOCK_NONE"}
+        )
 
-    selected_model = st.selectbox("Model", model_list)
-    user_api_key = st.text_input(f"{provider} Key (BYOK)", type="password")
-    temp = st.slider("Neural Creativity", 0.0, 1.0, 0.3)
+def build_knowledge_base():
+    docs = []
+    kb_path = "/tmp/knowledge_base"
+    if not os.path.exists(kb_path): return None
+    for file in os.listdir(kb_path):
+        if file.endswith(".pdf"):
+            loader = PyPDFLoader(os.path.join(kb_path, file))
+            docs.extend(loader.load())
+    if not docs: return None
+    splits = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200).split_documents(docs)
+    return FAISS.from_documents(documents=splits, embedding=embeddings)
 
-# --- MAIN UI ---
-st.markdown("<h1>Proposera <span style='color:white'>AI</span></h1>", unsafe_allow_html=True)
-st.markdown("<p style='text-align:center; color:#9CB3D1;'>Autonomous Enterprise Proposal Engineering • Neural Midnight Engine</p>", unsafe_allow_html=True)
+def extract_emails(text):
+    """Finds client email address from text - THIS WAS THE MISSING FUNCTION"""
+    email_pattern = r"[\w\.-]+@[\w\.-]+\.\w+"
+    emails = re.findall(email_pattern, text)
+    return emails[0] if emails else "client@example.com"
 
-_, col_center, _ = st.columns([1, 2, 1])
+def get_client_name(text, model_name, user_key=None):
+    # Using 2.0 Flash as the default searcher to avoid 1.5
+    llm = get_llm("gemini-2.0-flash", 0, user_key)
+    prompt = f"Identify the recipient company name from this RFP. Return ONLY the name. \n\n Text: {text[:2000]}"
+    try:
+        name = llm.invoke(prompt).content.strip()
+        return name if len(name.split()) <= 5 else "Prospective Client"
+    except Exception: return "Prospective Client"
 
-with col_center:
-    with st.expander("💎 System Configuration"):
-        kb_files = st.file_uploader("Train Enterprise Brain (PDF)", accept_multiple_files=True, type="pdf")
-        if st.button("Optimize Memory"):
-            if kb_files:
-                for f in kb_files:
-                    with open(os.path.join(TMP_KB, f.name), "wb") as out: out.write(f.getbuffer())
-                st.session_state['vectorstore'] = build_knowledge_base(); st.success("✅ Neural Brain Ready.")
+def research_competitors(rfp_text):
+    try:
+        with DDGS() as ddgs:
+            results = [r for r in ddgs.text(f"Market trends for {rfp_text[:50]}", max_results=2)]
+            return "\n".join([f"{r['title']}: {r['body']}" for r in results])
+    except: return "Market data unavailable."
 
-    st.markdown("<div class='form-card'>", unsafe_allow_html=True)
-    rfp_files = st.file_uploader("Autonomous Mission Intake (Multiple RFPs OK)", type="pdf", accept_multiple_files=True)
-    
-    if st.button("⚡ EXECUTE NEURAL SEQUENCE"):
-        if rfp_files and 'vectorstore' in st.session_state:
-            with st.status("🚀 Processing Autonomous Pipeline...", expanded=True) as status:
-                results = []
-                for f in rfp_files:
-                    path = os.path.join(TMP_RFP, f.name); with open(path, "wb") as out: out.write(f.getbuffer())
-                    text = extract_rfp_text(path)
-                    
-                    try:
-                        client = get_client_name(text, selected_model, user_api_key)
-                        web_data = research_competitors(text)
-                        prop = generate_proposal(text, st.session_state['vectorstore'], web_data, selected_model, temp, client, user_api_key)
-                        email_body = generate_email_body(prop, selected_model, client, user_api_key)
-                        doc_p = os.path.join(TMP_OUT, f"Proposal_{f.name}.docx")
-                        save_to_word(prop, doc_p)
-                        results.append({"file": f.name, "client": client, "email": extract_emails(text), "text": prop, "email_body": email_body, "doc": doc_p})
-                    except Exception as e:
-                        st.error(f"Error on {f.name}: {str(e)}")
-                
-                status.update(label="✅ Sequence Complete", state="complete", expanded=False)
-            st.session_state['batch_results'] = results
+def generate_proposal(rfp_text, vectorstore, web_data, model_name, temp, client_name, user_key=None):
+    llm = get_llm(model_name, temp, user_key)
+    system_prompt = (f"Autonomous Sales AI. Draft B2B proposal for {client_name}. STRICT: NEVER use 'Your Organization'. ALWAYS use {client_name}. Format with Markdown. \n\nContext: {{context}} \nWeb Data: {{web_data}}")
+    prompt = ChatPromptTemplate.from_messages([("system", system_prompt), ("human", "Draft for:\n{input}")])
+    chain = ({"context": vectorstore.as_retriever() | (lambda docs: "\n\n".join(d.page_content for d in docs)), "web_data": lambda x: web_data, "input": RunnablePassthrough()} | prompt | llm | StrOutputParser())
+    return chain.invoke(rfp_text)
 
-    if 'batch_results' in st.session_state:
-        st.divider()
-        for res in st.session_state['batch_results']:
-            with st.expander(f"✨ {res['client']} | Mission Ready", expanded=True):
-                ca, cb = st.columns(2)
-                with ca: 
-                    with open(res['doc'], "rb") as f: st.download_button("📥 Download Doc", f, file_name=f"Proposal_{res['file']}.docx")
-                with cb:
-                    if st.button(f"🚀 Dispatch to {res['email']}", key=f"btn_{res['file']}"):
-                        if not app_pass: st.error("Enter App Password in Sidebar!")
-                        else:
-                            with st.spinner("Dispatching..."):
-                                msg = send_real_email(res['email'], f"Proposal for {res['client']}", res['email_body'], res['doc'], sender_mail, app_pass)
-                                if msg is True: st.success("✅ Dispatched!")
-                                else: st.error(msg)
-                st.markdown(f"<div class='preview-box'>{res['text']}</div>", unsafe_allow_html=True)
-    st.markdown("</div>", unsafe_allow_html=True)
+def generate_email_body(proposal_text, model_name, client_name, user_key=None):
+    llm = get_llm("gemini-2.0-flash", 0.5, user_key)
+    prompt = f"Write a 3-sentence professional email to {client_name} about the attached proposal. \n\n Proposal: {proposal_text[:500]}"
+    try: return str(llm.invoke(prompt).content)
+    except: return f"Dear {client_name}, please find our proposal attached."
+
+def send_real_email(recipient_email, subject, body, attachment_path, sender_email, app_password):
+    try:
+        clean_body = unicodedata.normalize('NFKD', str(body)).encode('ascii', 'ignore').decode('ascii')
+        clean_subj = unicodedata.normalize('NFKD', str(subject)).encode('ascii', 'ignore').decode('ascii')
+        msg = MIMEMultipart()
+        msg['From'], msg['To'], msg['Subject'] = sender_email, recipient_email, Header(clean_subj, 'utf-8')
+        msg.attach(MIMEText(clean_body, 'plain', 'utf-8'))
+        with open(attachment_path, "rb") as f:
+            part = MIMEBase('application', 'octet-stream')
+            part.set_payload(f.read()); encoders.encode_base64(part)
+            part.add_header('Content-Disposition', f'attachment; filename="{os.path.basename(attachment_path)}"')
+            msg.attach(part)
+        server = smtplib.SMTP('smtp.gmail.com', 587); server.starttls()
+        server.login(sender_email, app_password); server.sendmail(sender_email, recipient_email, msg.as_string()); server.quit()
+        return True
+    except Exception as e: return str(e)
+
+def extract_rfp_text(path):
+    return "\n".join([d.page_content for d in PyPDFLoader(path).load()])
