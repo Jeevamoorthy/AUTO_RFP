@@ -1,8 +1,4 @@
-import os
-import re
-import smtplib
-import unicodedata
-import streamlit as st
+import os, re, smtplib, unicodedata, streamlit as st
 from email import encoders
 from email.header import Header
 from email.mime.base import MIMEBase
@@ -23,7 +19,7 @@ from duckduckgo_search import DDGS
 load_dotenv()
 
 def get_llm(model_name, temp, user_key=None):
-    if "gpt" in model_name.lower() or "o1" in model_name.lower():
+    if "gpt" in model_name.lower():
         key = user_key if user_key else st.secrets.get("OPENAI_API_KEY")
         return ChatOpenAI(model=model_name, temperature=temp, api_key=key)
     elif "claude" in model_name.lower():
@@ -31,13 +27,15 @@ def get_llm(model_name, temp, user_key=None):
         return ChatAnthropic(model=model_name, temperature=temp, api_key=key)
     else:
         key = user_key if user_key else (st.secrets.get("GOOGLE_API_KEY") or os.getenv("GOOGLE_API_KEY"))
+        if not key: raise ValueError("Invalid Gemini API Key")
         return ChatGoogleGenerativeAI(model=model_name, temperature=temp, google_api_key=key, max_output_tokens=4000)
 
 def build_knowledge_base(user_key=None):
     kb_path, docs = "/tmp/knowledge_base", []
     current_key = user_key if user_key else (st.secrets.get("GOOGLE_API_KEY") or os.getenv("GOOGLE_API_KEY"))
-    if not current_key: return None
+    if not current_key: raise ValueError("No API Key found. Please enter it in the sidebar.")
     
+    # Resilient Embedding Hunter
     embeddings_model = None
     for m in ["text-embedding-004", "models/text-embedding-004", "models/embedding-001"]:
         try:
@@ -46,14 +44,15 @@ def build_knowledge_base(user_key=None):
             embeddings_model = test; break
         except: continue
     
-    if not embeddings_model: raise ValueError("Invalid Google Key for Embeddings")
-    if not os.path.exists(kb_path): os.makedirs(kb_path)
+    if not embeddings_model: raise ValueError("Invalid Google Key for Embeddings. Ensure the key has Gemini API access.")
+    if not os.path.exists(kb_path): return None
     for file in os.listdir(kb_path):
         if file.endswith(".pdf"): docs.extend(PyPDFLoader(os.path.join(kb_path, file)).load())
     if not docs: return None
     splits = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200).split_documents(docs)
     return FAISS.from_documents(documents=splits, embedding=embeddings_model)
 
+# (Keep your other helper functions: extract_emails, get_client_name, research_competitors, generate_proposal, generate_email_body, send_real_email, extract_rfp_text)
 def extract_emails(text):
     """Finds client email address from text."""
     email_pattern = r"[\w\.-]+@[\w\.-]+\.\w+"
