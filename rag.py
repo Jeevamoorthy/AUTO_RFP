@@ -28,18 +28,24 @@ load_dotenv()
 embeddings = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
 
 def get_llm(model_name, temp, user_key=None):
-    """Universal LLM Selector with Provider Detection"""
+    """Universal AI Selector Logic"""
+    
+    # 1. OPENAI PROVIDER
     if "gpt" in model_name.lower() or "o1" in model_name.lower():
-        key = user_key if user_key else os.getenv("OPENAI_API_KEY")
+        key = user_key if user_key else st.secrets.get("OPENAI_API_KEY")
+        if not key: raise ValueError("Please enter your OpenAI API Key in the sidebar.")
         return ChatOpenAI(model=model_name, temperature=temp, api_key=key)
     
+    # 2. ANTHROPIC PROVIDER
     elif "claude" in model_name.lower():
-        key = user_key if user_key else os.getenv("ANTHROPIC_API_KEY")
+        key = user_key if user_key else st.secrets.get("ANTHROPIC_API_KEY")
+        if not key: raise ValueError("Please enter your Anthropic API Key in the sidebar.")
         return ChatAnthropic(model=model_name, temperature=temp, api_key=key)
     
+    # 3. GOOGLE PROVIDER (Default / Your List)
     else:
-        # Default to Gemini
-        key = user_key if user_key else (os.getenv("GOOGLE_API_KEY") or st.secrets.get("GOOGLE_API_KEY"))
+        key = user_key if user_key else (st.secrets.get("GOOGLE_API_KEY") or os.getenv("GOOGLE_API_KEY"))
+        if not key: raise ValueError("Please enter your Gemini API Key in the sidebar.")
         return ChatGoogleGenerativeAI(
             model=model_name, 
             temperature=temp, 
@@ -48,42 +54,23 @@ def get_llm(model_name, temp, user_key=None):
             safety_settings={"HARM_CATEGORY_HARASSMENT": "BLOCK_NONE", "HARM_CATEGORY_HATE_SPEECH": "BLOCK_NONE"}
         )
 
-def web_search_bypass(query):
-    try:
-        with DDGS() as ddgs:
-            results = [r for r in ddgs.text(query, max_results=3)]
-            return "\n".join([f"{r['title']}: {r['body']}" for r in results])
-    except Exception:
-        return "Market data currently unavailable."
-
-def build_knowledge_base():
-    docs = []
-    kb_path = "data/knowledge_base"
-    os.makedirs(kb_path, exist_ok=True)
-    for file in os.listdir(kb_path):
-        if file.endswith(".pdf"):
-            loader = PyPDFLoader(os.path.join(kb_path, file))
-            docs.extend(loader.load())
-    if not docs: return None
-    text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
-    splits = text_splitter.split_documents(docs)
-    return FAISS.from_documents(documents=splits, embedding=embeddings)
-
-def extract_emails(text):
-    email_pattern = r"[\w\.-]+@[\w\.-]+\.\w+"
-    emails = re.findall(email_pattern, text)
-    return emails[0] if emails else "client@example.com"
+# ... (Keep your web_search_bypass, build_knowledge_base, extract_emails, extract_rfp_text functions)
 
 def get_client_name(text, model_name, user_key=None):
     llm = get_llm(model_name, 0, user_key)
-    prompt = f"Identify the recipient company name from this text. Return ONLY the name. Rules: No notes. If missing, return 'Prospective Client'. \n\n Text: {text[:2000]}"
+    prompt = f"Identify the recipient company name from this RFP. Return ONLY the name. No notes. \n\n Text: {text[:2000]}"
     try:
         name = llm.invoke(prompt).content.strip()
         return name if len(name.split()) <= 5 else "Prospective Client"
     except Exception: return "Prospective Client"
 
 def research_competitors(rfp_text):
-    return web_search_bypass(f"Market pricing and trends for: {rfp_text[:100]}")
+    try:
+        with DDGS() as ddgs:
+            query = f"Market trends for {rfp_text[:50]}"
+            results = [r for r in ddgs.text(query, max_results=2)]
+            return "\n".join([f"{r['title']}: {r['body']}" for r in results])
+    except: return "Market data unavailable."
 
 def generate_proposal(rfp_text, vectorstore, web_data, model_name, temp, client_name, user_key=None):
     llm = get_llm(model_name, temp, user_key)
@@ -91,13 +78,12 @@ def generate_proposal(rfp_text, vectorstore, web_data, model_name, temp, client_
     
     system_prompt = (
         "You are an Autonomous Sales AI. Draft a professional B2B proposal. "
-        f"THE CLIENT IS: {client_name}. "
-        f"STRICT: NEVER use 'Your Organization' or '[Client Name]'. ALWAYS use {client_name}. "
+        f"THE CLIENT IS: {client_name}. NEVER use 'Your Organization'. ALWAYS use {client_name}. "
         "Format with Markdown (# Titles, ** Bold)."
         "\n\nContext: {context} \nWeb Data: {web_data}"
     )
     
-    prompt = ChatPromptTemplate.from_messages([("system", system_prompt), ("human", "Draft proposal for:\n{input}")])
+    prompt = ChatPromptTemplate.from_messages([("system", system_prompt), ("human", "Draft for:\n{input}")])
     def format_docs(docs): return "\n\n".join(d.page_content for d in docs)
     chain = ({"context": retriever | format_docs, "web_data": lambda x: web_data, "input": RunnablePassthrough()} | prompt | llm | StrOutputParser())
     return chain.invoke(rfp_text)
@@ -106,14 +92,14 @@ def generate_email_body(proposal_text, model_name, client_name, user_key=None):
     llm = get_llm(model_name, 0.5, user_key)
     prompt = f"Write a 3-sentence professional email to {client_name} about the attached proposal. \n\n Proposal: {proposal_text[:500]}"
     try: return str(llm.invoke(prompt).content)
-    except Exception: return f"Dear {client_name}, please find our proposal attached."
+    except: return "Please find our proposal attached."
 
 def send_real_email(recipient_email, subject, body, attachment_path, sender_email, app_password):
     try:
         clean_body = unicodedata.normalize('NFKD', str(body)).encode('ascii', 'ignore').decode('ascii')
-        clean_subject = unicodedata.normalize('NFKD', str(subject)).encode('ascii', 'ignore').decode('ascii')
+        clean_subj = unicodedata.normalize('NFKD', str(subject)).encode('ascii', 'ignore').decode('ascii')
         msg = MIMEMultipart()
-        msg['From'], msg['To'], msg['Subject'] = sender_email, recipient_email, Header(clean_subject, 'utf-8')
+        msg['From'], msg['To'], msg['Subject'] = sender_email, recipient_email, Header(clean_subj, 'utf-8')
         msg.attach(MIMEText(clean_body, 'plain', 'utf-8'))
         with open(attachment_path, "rb") as f:
             part = MIMEBase('application', 'octet-stream')
@@ -121,9 +107,6 @@ def send_real_email(recipient_email, subject, body, attachment_path, sender_emai
             part.add_header('Content-Disposition', f'attachment; filename="{os.path.basename(attachment_path)}"')
             msg.attach(part)
         server = smtplib.SMTP('smtp.gmail.com', 587); server.starttls()
-        server.login(sender_email, app_password); server.sendmail(sender_email, recipient_email, msg.as_string()); server.quit()
+        server.login(sender_mail, app_password); server.sendmail(sender_email, recipient_email, msg.as_string()); server.quit()
         return True
     except Exception as e: return str(e)
-
-def extract_rfp_text(path):
-    return "\n".join([d.page_content for d in PyPDFLoader(path).load()])
