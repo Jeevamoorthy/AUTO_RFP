@@ -78,19 +78,76 @@ def research_competitors(rfp_text):
         return "Market data currently unavailable."
 
 
-def generate_proposal(rfp_text, vectorstore, web_data, model_name, temp, client_name):
-    """Generates a professional B2B proposal."""
-    llm = ChatGoogleGenerativeAI(model=model_name, temperature=temp, max_output_tokens=6000)
+def generate_proposal(
+    rfp_text,
+    vectorstore,
+    web_data,
+    model_name,
+    temp,
+    client_name,
+    provider="gemini"
+):
+    """
+    Generates a professional B2B proposal using selected LLM provider.
+    provider options:
+    - gemini
+    - openai
+    - claude
+    """
+
+    # --- Dynamic LLM Selection ---
+    if provider == "openai":
+        from langchain_openai import ChatOpenAI
+        llm = ChatOpenAI(
+            model="gpt-4o",
+            temperature=temp
+        )
+
+    elif provider == "claude":
+        from langchain_anthropic import ChatAnthropic
+        llm = ChatAnthropic(
+            model="claude-3-sonnet-20240229",
+            temperature=temp
+        )
+
+    else:  # Default Gemini
+        from langchain_google_genai import ChatGoogleGenerativeAI
+        llm = ChatGoogleGenerativeAI(
+            model=model_name,
+            temperature=temp,
+            max_output_tokens=6000
+        )
+
     retriever = vectorstore.as_retriever()
-    
+
     system_prompt = (
         "You are an Autonomous Sales AI. Draft a professional B2B proposal. "
         f"THE CLIENT IS: {client_name}. "
         f"STRICT: NEVER use 'Your Organization'. ALWAYS use {client_name}. "
         "Format with Markdown (# Titles, ** Bold)."
-        "\n\nContext: {context} \nWeb Data: {web_data}"
-        "never type **xx**"
+        "\n\nContext: {context}\nWeb Data: {web_data}"
     )
+
+    prompt = ChatPromptTemplate.from_messages([
+        ("system", system_prompt),
+        ("human", "Draft proposal for:\n{input}")
+    ])
+
+    def format_docs(docs):
+        return "\n\n".join(d.page_content for d in docs)
+
+    chain = (
+        {
+            "context": retriever | format_docs,
+            "web_data": lambda x: web_data,
+            "input": RunnablePassthrough(),
+        }
+        | prompt
+        | llm
+        | StrOutputParser()
+    )
+
+    return chain.invoke(rfp_text)
     
     prompt = ChatPromptTemplate.from_messages([
         ("system", system_prompt),
@@ -110,21 +167,46 @@ def generate_proposal(rfp_text, vectorstore, web_data, model_name, temp, client_
 
 
 # --- Update 1: Force the email body to be a string ---
-def generate_email_body(proposal_text, model_name, client_name):
-    """Generates a short email cover letter as a guaranteed string."""
-    llm = ChatGoogleGenerativeAI(model=model_name, temperature=0.5)
-    prompt = f"Write a 3-sentence professional email to {client_name} about the attached proposal. \n\n Proposal: {proposal_text[:500]}"
+def generate_email_body(proposal_text, model_name, client_name, provider="gemini"):
+    """
+    Generates a short professional email body using selected LLM.
+    """
+
+    if provider == "openai":
+        from langchain_openai import ChatOpenAI
+        llm = ChatOpenAI(
+            model="gpt-4o",
+            temperature=0.5
+        )
+
+    elif provider == "claude":
+        from langchain_anthropic import ChatAnthropic
+        llm = ChatAnthropic(
+            model="claude-3-sonnet-20240229",
+            temperature=0.5
+        )
+
+    else:
+        from langchain_google_genai import ChatGoogleGenerativeAI
+        llm = ChatGoogleGenerativeAI(
+            model=model_name,
+            temperature=0.5
+        )
+
+    prompt = (
+        f"Write a 3-sentence professional email to {client_name} "
+        f"about the attached proposal.\n\n"
+        f"Proposal Summary:\n{proposal_text[:800]}"
+    )
+
     try:
         response = llm.invoke(prompt)
-        # Handle cases where .content might be a list or object
         content = response.content
         if isinstance(content, list):
-            return " ".join([str(item) for item in content])
+            return " ".join(str(x) for x in content)
         return str(content)
     except Exception:
         return f"Hello {client_name}, please find our proposal attached for your review."
-
-
 def sanitize_text(text):
     """The 'Nuclear Option': Strips every single non-ASCII character from the text."""
     if not text:
