@@ -123,7 +123,7 @@ with st.sidebar:
         **1.** Go to [Google App Passwords](https://myaccount.google.com/apppasswords).\n
         **2.** Ensure **2-Step Verification** is ON in your Google Account.\n
         **3.** App name: type **'Proposera AI'**.\n
-        **4.** Click **Create**.
+        **4.** Click **Create**.\n
         **5.** Copy the **16-character code** and paste it below.
         """)
     app_pass = st.text_input("App Password", type="password", help="Gmail > Security > App Passwords")
