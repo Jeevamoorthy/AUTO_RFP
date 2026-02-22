@@ -1,4 +1,8 @@
-import os, re, smtplib, unicodedata, streamlit as st
+import os
+import re
+import smtplib
+import unicodedata
+import streamlit as st
 from email import encoders
 from email.header import Header
 from email.mime.base import MIMEBase
@@ -34,7 +38,6 @@ def build_knowledge_base(user_key=None):
     current_key = user_key if user_key else (st.secrets.get("GOOGLE_API_KEY") or os.getenv("GOOGLE_API_KEY"))
     if not current_key: return None
     
-    # Resilient Embedding Hunter
     embeddings_model = None
     for m in ["text-embedding-004", "models/text-embedding-004", "models/embedding-001"]:
         try:
@@ -44,12 +47,18 @@ def build_knowledge_base(user_key=None):
         except: continue
     
     if not embeddings_model: raise ValueError("Invalid Google Key for Embeddings")
-    if not os.path.exists(kb_path): return None
+    if not os.path.exists(kb_path): os.makedirs(kb_path)
     for file in os.listdir(kb_path):
         if file.endswith(".pdf"): docs.extend(PyPDFLoader(os.path.join(kb_path, file)).load())
     if not docs: return None
     splits = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200).split_documents(docs)
     return FAISS.from_documents(documents=splits, embedding=embeddings_model)
+
+def extract_emails(text):
+    """Finds client email address from text."""
+    email_pattern = r"[\w\.-]+@[\w\.-]+\.\w+"
+    emails = re.findall(email_pattern, text)
+    return emails[0] if emails else "client@example.com"
 
 def get_client_name(text, model_name, user_key=None):
     llm = get_llm(model_name, 0, user_key)
