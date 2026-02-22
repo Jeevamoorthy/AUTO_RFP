@@ -1,6 +1,8 @@
 streamlit
 langchain>=0.2.0
 langchain-google-genai
+langchain-openai
+langchain-anthropic
 langchain-community
 langchain-huggingface
 faiss-cpu
@@ -11,8 +13,3 @@ duckduckgo-search==6.3.0
 sentence-transformers
 google-generativeai
 pydantic>=2.0
-langchain-openai
-langchain-anthropic
-
-
-
