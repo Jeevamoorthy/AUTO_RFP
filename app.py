@@ -12,10 +12,11 @@ from rag import (
 )
 from utils import save_to_word
 
-# Hotfix
+# Streamlit Cloud Hotfix
 try: from duckduckgo_search import DDGS
 except ImportError: subprocess.check_call([sys.executable, "-m", "pip", "install", "duckduckgo-search==6.3.0"])
 
+# Storage Paths
 TMP_KB, TMP_RFP, TMP_OUT = "/tmp/knowledge_base", "/tmp/rfp_input", "/tmp/output"
 for p in [TMP_KB, TMP_RFP, TMP_OUT]:
     if not os.path.exists(p): os.makedirs(p)
@@ -39,10 +40,15 @@ st.markdown("""
 with st.sidebar:
     st.markdown("## 📬 Dispatch Control")
     sender_mail = st.text_input("Gmail Address", value="jeevamissvmins34@gmail.com")
+    
+    with st.expander("🔑 How to get App Password?"):
+        st.markdown("[Click here](https://myaccount.google.com/apppasswords) to create a 16-character code (Proposera AI) in your Google Account settings.")
+    
     app_pass = st.text_input("App Password", type="password")
+    
     st.divider()
     st.markdown("## 🧠 Reasoning Brain")
-    provider = st.selectbox("Provider", ["Google Gemini", "OpenAI GPT", "Anthropic Claude"])
+    provider = st.selectbox("Intelligence Provider", ["Google Gemini", "OpenAI GPT", "Anthropic Claude"])
     
     if provider == "Google Gemini":
         model_list = [
@@ -55,16 +61,25 @@ with st.sidebar:
             "gemini-3.1-pro-preview-customtools", "gemini-3-pro-image-preview", "nano-banana-pro-preview",
             "gemini-robotics-er-1.5-preview", "gemini-2.5-computer-use-preview-10-2025", "deep-research-pro-preview-12-2025"
         ]
-    elif provider == "OpenAI GPT": model_list = ["gpt-4o", "gpt-4o-mini", "o1-preview"]
-    else: model_list = ["claude-3-5-sonnet-latest"]
+        key_help_link = "https://aistudio.google.com/app/apikey"
+    elif provider == "OpenAI GPT": 
+        model_list = ["gpt-4o", "gpt-4o-mini", "o1-preview"]
+        key_help_link = "https://platform.openai.com/api-keys"
+    else: 
+        model_list = ["claude-3-5-sonnet-latest"]
+        key_help_link = "https://console.anthropic.com/settings/keys"
 
     selected_model = st.selectbox("Model", model_list)
+    
+    with st.expander("🤖 How to get API Key?"):
+        st.markdown(f"[Click here to get your {provider} Key]({key_help_link})")
+        
     user_api_key = st.text_input(f"{provider} Key (BYOK)", type="password")
     temp = st.slider("Neural Creativity", 0.0, 1.0, 0.3)
 
 # --- MAIN UI ---
 st.markdown("<h1>Proposera <span style='color:white'>AI</span></h1>", unsafe_allow_html=True)
-st.markdown("<p class='subtitle'>Autonomous Enterprise Proposal Engineering • Neural Midnight Engine</p>", unsafe_allow_html=True)
+st.markdown("<p style='text-align:center; color:#9CB3D1;'>Autonomous Enterprise Proposal Engineering • Neural Midnight Engine</p>", unsafe_allow_html=True)
 
 _, col_center, _ = st.columns([1, 2, 1])
 
@@ -73,10 +88,17 @@ with col_center:
         kb_files = st.file_uploader("Train Brain (PDF)", accept_multiple_files=True, type="pdf")
         if st.button("Optimize Memory"):
             if kb_files:
-                for f in kb_files:
-                    with open(os.path.join(TMP_KB, f.name), "wb") as out: out.write(f.getbuffer())
-                st.session_state['vectorstore'] = build_knowledge_base(user_api_key)
-                st.success("✅ Neural Brain Ready.")
+                # Security Check
+                if not user_api_key and "GOOGLE_API_KEY" not in st.secrets:
+                    st.error("🔑 API Key required! Enter it in the sidebar first.")
+                else:
+                    for f in kb_files:
+                        with open(os.path.join(TMP_KB, f.name), "wb") as out: out.write(f.getbuffer())
+                    try:
+                        st.session_state['vectorstore'] = build_knowledge_base(user_api_key)
+                        st.success("✅ Neural Brain Ready.")
+                    except ValueError as e:
+                        st.error(str(e))
 
     st.markdown("<div class='form-card'>", unsafe_allow_html=True)
     rfp_files = st.file_uploader("Autonomous Mission Intake (Batch PDFs)", type="pdf", accept_multiple_files=True)
@@ -101,6 +123,8 @@ with col_center:
                     except Exception as e: st.error(f"Error: {str(e)}")
                 status.update(label="✅ Sequence Complete", state="complete", expanded=False)
             st.session_state['batch_results'] = results
+        else:
+            st.error("Please optimize Neural Brain and upload RFPs first.")
 
     if 'batch_results' in st.session_state:
         st.divider()
