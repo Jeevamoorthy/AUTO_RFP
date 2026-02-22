@@ -28,7 +28,7 @@ load_dotenv()
 api_key = os.getenv("GOOGLE_API_KEY") or (st.secrets["GOOGLE_API_KEY"] if "GOOGLE_API_KEY" in st.secrets else None)
 
 # Use Google Embeddings (Fastest for Cloud)
-embeddings = GoogleGenerativeAIEmbeddings(model="models/embedding-001", google_api_key=api_key)
+embeddings = GoogleGenerativeAIEmbeddings(model="models/embedding-004", google_api_key=api_key)
 
 def get_llm(model_name, temp, user_key=None):
     """Universal AI Selector Engine"""
