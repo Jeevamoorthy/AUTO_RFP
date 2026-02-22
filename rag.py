@@ -31,26 +31,28 @@ def get_llm(model_name, temp, user_key=None):
         return ChatGoogleGenerativeAI(model=model_name, temperature=temp, google_api_key=key, max_output_tokens=4000)
 
 def build_knowledge_base(user_key=None):
-    kb_path, docs = "/tmp/knowledge_base", []
-    current_key = user_key if user_key else (st.secrets.get("GOOGLE_API_KEY") or os.getenv("GOOGLE_API_KEY"))
-    if not current_key: raise ValueError("No API Key found. Please enter it in the sidebar.")
-    
-    # Resilient Embedding Hunter
+    # 1. Look for key in Sidebar -> Then Secrets -> Then Environment
+    current_key = user_key if user_key else st.secrets.get("GOOGLE_API_KEY")
+    if not current_key:
+        current_key = os.getenv("GOOGLE_API_KEY")
+
+    if not current_key:
+        raise ValueError("🔑 No API Key detected. Please paste your key in the sidebar first!")
+
+    # 2. Resilient Embedding Hunter
     embeddings_model = None
-    for m in ["text-embedding-004", "models/text-embedding-004", "models/embedding-001"]:
+    # We try both prefixed and non-prefixed names
+    for m in ["models/text-embedding-004", "text-embedding-004"]:
         try:
             test = GoogleGenerativeAIEmbeddings(model=m, google_api_key=current_key)
-            test.embed_query("ping")
-            embeddings_model = test; break
-        except: continue
+            test.embed_query("connection_test")
+            embeddings_model = test
+            break 
+        except Exception as e:
+            continue
     
-    if not embeddings_model: raise ValueError("Invalid Google Key for Embeddings. Ensure the key has Gemini API access.")
-    if not os.path.exists(kb_path): return None
-    for file in os.listdir(kb_path):
-        if file.endswith(".pdf"): docs.extend(PyPDFLoader(os.path.join(kb_path, file)).load())
-    if not docs: return None
-    splits = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200).split_documents(docs)
-    return FAISS.from_documents(documents=splits, embedding=embeddings_model)
+    if not embeddings_model:
+        raise ValueError("❌ Key Rejected by Google. Ensure your key is valid and has 'Generative Language API' enabled in AI Studio.")
 
 # (Keep your other helper functions: extract_emails, get_client_name, research_competitors, generate_proposal, generate_email_body, send_real_email, extract_rfp_text)
 def extract_emails(text):
