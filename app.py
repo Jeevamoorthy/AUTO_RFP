@@ -1,19 +1,28 @@
 import streamlit as st
 import os, time, subprocess, sys
-from rag import build_knowledge_base, generate_proposal, extract_rfp_text, research_competitors, extract_emails, get_client_name, generate_email_body, send_real_email
+from rag import (
+    build_knowledge_base, 
+    generate_proposal, 
+    extract_rfp_text, 
+    research_competitors, 
+    extract_emails, 
+    get_client_name, 
+    generate_email_body, 
+    send_real_email
+)
 from utils import save_to_word
 
 # Hotfix
 try: from duckduckgo_search import DDGS
 except ImportError: subprocess.check_call([sys.executable, "-m", "pip", "install", "duckduckgo-search==6.3.0"])
 
-TMP_KB, TMP_RFP, TMP_OUT = "/tmp/kb", "/tmp/rfp", "/tmp/out"
+TMP_KB, TMP_RFP, TMP_OUT = "/tmp/knowledge_base", "/tmp/rfp_input", "/tmp/output"
 for p in [TMP_KB, TMP_RFP, TMP_OUT]:
     if not os.path.exists(p): os.makedirs(p)
 
-st.set_page_config(page_title="Proposera AI", layout="wide", page_icon="💠")
+st.set_page_config(page_title="Proposera AI | Neural Midnight", layout="wide", page_icon="💠")
 
-# --- UI BRANDING ---
+# --- UI CSS ---
 st.markdown("""
     <style>
         .stApp { background-color: #0A101E; background-image: linear-gradient(rgba(255,255,255,0.03) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.03) 1px, transparent 1px); background-size: 50px 50px; color: #E6F1FF; }
@@ -21,7 +30,6 @@ st.markdown("""
         h1 { color: #00E0FF; text-align: center; font-weight: 800; text-shadow: 0 0 15px rgba(0,224,255,0.4); margin-bottom: 0px; }
         .subtitle { color: #9CB3D1; text-align: center; font-size: 14px; margin-bottom: 30px; }
         .stButton>button { background: linear-gradient(90deg, #007BFF, #00E0FF) !important; color: white !important; font-weight: 700; padding: 14px; border: none; border-radius: 8px; width: 100%; transition: 0.3s; }
-        .stButton>button:hover { transform: translateY(-2px); box-shadow: 0 10px 25px rgba(0, 200, 255, 0.5); }
         .preview-box { height: 450px; overflow-y: scroll; background-color: #0E1627; padding: 25px; border-radius: 10px; border: 1px solid #1F2F4A; color: #E6F1FF; font-family: 'Inter', sans-serif; line-height: 1.6; }
         [data-testid="stSidebar"] { background-color: #0A101E; border-right: 1px solid #1F2A44; }
     </style>
@@ -29,15 +37,24 @@ st.markdown("""
 
 # --- SIDEBAR ---
 with st.sidebar:
-    st.markdown("<h2 style='color:#00E0FF'>📬 Dispatch Control</h2>", unsafe_allow_html=True)
+    st.markdown("## 📬 Dispatch Control")
     sender_mail = st.text_input("Gmail Address", value="jeevamissvmins34@gmail.com")
     app_pass = st.text_input("App Password", type="password")
     st.divider()
-    st.markdown("<h2 style='color:#00E0FF'>🧠 Reasoning Brain</h2>", unsafe_allow_html=True)
+    st.markdown("## 🧠 Reasoning Brain")
     provider = st.selectbox("Provider", ["Google Gemini", "OpenAI GPT", "Anthropic Claude"])
     
     if provider == "Google Gemini":
-        model_list = ["gemini-2.5-flash", "gemini-2.5-pro", "gemini-2.0-flash", "gemini-2.0-flash-exp-image-generation", "gemini-2.5-preview-tts", "gemma-3-27b-it", "deep-research-pro-preview-12-2025"]
+        model_list = [
+            "gemini-2.5-flash", "gemini-2.5-pro", "gemini-2.0-flash", "gemini-2.0-flash-001",
+            "gemini-2.0-flash-exp-image-generation", "gemini-2.0-flash-lite-001", "gemini-2.0-flash-lite",
+            "gemini-2.5-flash-preview-tts", "gemini-2.5-pro-preview-tts", "gemma-3-1b-it",
+            "gemma-3-4b-it", "gemini-flash-latest", "gemini-flash-lite-latest", "gemini-pro-latest",
+            "gemini-2.5-flash-lite", "gemini-2.5-flash-image", "gemini-2.5-flash-lite-preview-09-2025",
+            "gemini-3-pro-preview", "gemini-3-flash-preview", "gemini-3.1-pro-preview",
+            "gemini-3.1-pro-preview-customtools", "gemini-3-pro-image-preview", "nano-banana-pro-preview",
+            "gemini-robotics-er-1.5-preview", "gemini-2.5-computer-use-preview-10-2025", "deep-research-pro-preview-12-2025"
+        ]
     elif provider == "OpenAI GPT": model_list = ["gpt-4o", "gpt-4o-mini", "o1-preview"]
     else: model_list = ["claude-3-5-sonnet-latest"]
 
@@ -52,8 +69,8 @@ st.markdown("<p class='subtitle'>Autonomous Enterprise Proposal Engineering • 
 _, col_center, _ = st.columns([1, 2, 1])
 
 with col_center:
-    with st.expander("💎 System Configuration (Brain Training)"):
-        kb_files = st.file_uploader("Train Neural Brain (PDF)", accept_multiple_files=True, type="pdf")
+    with st.expander("💎 System Configuration"):
+        kb_files = st.file_uploader("Train Brain (PDF)", accept_multiple_files=True, type="pdf")
         if st.button("Optimize Memory"):
             if kb_files:
                 for f in kb_files:
