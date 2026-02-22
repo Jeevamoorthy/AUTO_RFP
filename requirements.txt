@@ -13,3 +13,4 @@ duckduckgo-search==6.3.0
 sentence-transformers
 google-generativeai
 pydantic>=2.0
+ddgs
